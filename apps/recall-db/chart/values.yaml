@@ -1,0 +1,26 @@
+image:
+  repository: docker.io/CHANGEME/recall-db
+  tag: latest
+  pullPolicy: Always
+
+env:
+  DATABASE_SSL: ""
+  DB_CONNECT_RETRIES: "30"
+  DB_CONNECT_DELAY_MS: "2000"
+
+secretEnv:
+  DATABASE_URL: ""
+
+existingSecret: ""
+
+# Give migrations room to finish, but do not hang a release indefinitely.
+backoffLimit: 3
+activeDeadlineSeconds: 600
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

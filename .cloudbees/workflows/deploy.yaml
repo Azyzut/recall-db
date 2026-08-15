@@ -1,0 +1,86 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: deploy
+
+# Reusable: the Application-level deployer calls this once per environment.
+on:
+  workflow_call:
+    inputs:
+      artifact-id:
+        type: string
+        required: true
+      artifactVersion:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      artifact-id:
+        type: string
+        required: true
+        default: manual
+      artifactVersion:
+        type: string
+        required: true
+        default: latest
+      environment:
+        type: string
+        required: true
+        default: DEV
+
+permissions:
+  scm-token-own: read
+  scm-token-org: read
+
+jobs:
+  deploy:
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: cloudbees-io/checkout@v1
+
+      - name: Set kubeconfig
+        uses: docker://alpine:latest
+        env:
+          KCFG_B64: ${{ secrets.kubeconfig }}
+        run: |
+          set -eu
+          umask 077
+          mkdir -p /cloudbees/home/.kube
+          printf '%s' "$KCFG_B64" | tr -d '\r\n ' | base64 -d > /cloudbees/home/.kube/config
+          chmod 600 /cloudbees/home/.kube/config
+
+      - name: Install helm chart
+        id: install-chart
+        uses: cloudbees-io/helm-install@v1
+        with:
+          chart-location: ${{ cloudbees.workspace }}/apps/recall-db/chart
+          release-name: recall-db
+          namespace: ${{ vars.namespace }}
+          values: |
+            image:
+              repository: docker.io/${{ vars.DOCKERHUB_USER }}/recall-db
+              tag: ${{ inputs.artifactVersion }}
+            env:
+              DATABASE_SSL: ""
+            secretEnv:
+              DATABASE_URL: ${{ toJSON(secrets.DATABASE_URL) }}
+
+      - name: Register deployed artifact
+        if: ${{ inputs.artifact-id != 'test-deploy' && inputs.artifact-id != 'manual' && inputs.artifact-id != '' }}
+        uses: cloudbees-io/register-deployed-artifact@v2
+        with:
+          artifact-id: ${{ inputs.artifact-id }}
+          target-environment: ${{ inputs.environment }}
+
+      - name: Publish deploy evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          content: |-
+            ## recall-db deployed to ${{ inputs.environment }}
+            - **Image:** recall-db:${{ inputs.artifactVersion }}
+            - **Namespace:** ${{ vars.namespace }}
+            - **Artifact ID:** ${{ inputs.artifact-id }}
+          format: MARKDOWN
