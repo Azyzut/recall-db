@@ -1,6 +1,9 @@
 image:
   repository: docker.io/CHANGEME/recall-db
-  tag: latest
+  # Builds push only a commit-SHA tag, so there is no `latest` to fall back on.
+  # deploy.yaml always sets this from the release manifest; an empty value here
+  # fails at pod creation rather than silently pulling something stale.
+  tag: ""
   pullPolicy: Always
 
 env:

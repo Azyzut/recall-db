@@ -31,7 +31,7 @@ jobs:
       artifact-version: ${{ cloudbees.scm.sha }}
     steps:
       - name: Checkout
-        uses: cloudbees-io/checkout@v1
+        uses: cloudbees-io/checkout@v2
 
       - name: Typecheck
         uses: docker://node:24-alpine
@@ -55,7 +55,7 @@ jobs:
         uses: cloudbees-io/kaniko@v1
         kind: build
         with:
-          destination: docker.io/${{ vars.DOCKERHUB_USER }}/recall-db:${{ cloudbees.scm.sha }},docker.io/${{ vars.DOCKERHUB_USER }}/recall-db:latest
+          destination: docker.io/${{ vars.DOCKERHUB_USER }}/recall-db:${{ cloudbees.scm.sha }}
           dockerfile: apps/recall-db/Dockerfile
           # Context is the repo root: npm workspaces resolve from the root
           # package.json and lockfile, which a per-app context cannot see.
