@@ -81,8 +81,8 @@ jobs:
             
             | Deploy input | Value |
             |---|---|
-            | `version` | `${{ cloudbees.scm.sha }}` |
             | `artifact-id` | `${{ steps.extract-artifact-id.outputs.artifact-id }}` |
+            | `version` | `${{ cloudbees.scm.sha }}` |
             
             A release passes both automatically. This table is for manual deploys.
           format: MARKDOWN
