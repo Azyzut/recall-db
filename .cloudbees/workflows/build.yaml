@@ -76,6 +76,13 @@ jobs:
           content: |-
             ## recall-db built
             - **Image:** docker.io/${{ vars.DOCKERHUB_USER }}/recall-db:${{ cloudbees.scm.sha }}
-            - **Commit:** ${{ cloudbees.scm.sha }}
-            - **Artifact ID:** ${{ steps.extract-artifact-id.outputs.artifact-id }}
+            
+            To deploy this build on its own, run the **deploy** workflow with:
+            
+            | Deploy input | Value |
+            |---|---|
+            | `version` | `${{ cloudbees.scm.sha }}` |
+            | `artifact-id` | `${{ steps.extract-artifact-id.outputs.artifact-id }}` |
+            
+            A release passes both automatically. This table is for manual deploys.
           format: MARKDOWN

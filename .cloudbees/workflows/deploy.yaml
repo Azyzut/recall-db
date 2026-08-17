@@ -9,7 +9,7 @@ on:
       artifact-id:
         type: string
         required: true
-      artifactVersion:
+      version:
         type: string
         required: true
       environment:
@@ -20,11 +20,17 @@ on:
       artifact-id:
         type: string
         required: true
+        description: >-
+          Artifact ID from the build's evidence tab. Deploying it records this
+          release against the environment. Use `manual` to deploy without
+          recording it — useful when testing, useless for traceability.
         default: manual
-      artifactVersion:
+      version:
         type: string
         required: true
-        default: latest
+        description: >-
+          The image tag to deploy: the commit SHA shown as Version in the build's
+          evidence tab. Builds push only a SHA tag, so there is no `latest`.
       environment:
         type: string
         required: true
@@ -40,6 +46,39 @@ jobs:
     steps:
       - name: Checkout
         uses: cloudbees-io/checkout@v2
+
+      - name: Check the version to deploy
+
+        uses: docker://alpine:latest
+
+        env:
+
+          V: ${{ inputs.version }}
+
+        run: |
+
+          # Builds push a commit-SHA tag only. `latest` has never existed,
+
+          # and an absent tag pulls nothing. Catching it here costs one step
+
+          # and avoids an ImagePullBackOff that looks like a registry auth
+
+          # failure three minutes later.
+
+          if [ -z "$V" ] || [ "$V" = "latest" ]; then
+
+            echo "version must be the image tag to deploy."
+
+            echo "Use the commit SHA shown as Version in the build's evidence tab."
+
+            echo "Builds push only a SHA tag, so 'latest' does not exist."
+
+            exit 1
+
+          fi
+
+          echo "deploying version $V"
+
 
       - name: Set kubeconfig
         uses: docker://alpine:latest
@@ -62,7 +101,7 @@ jobs:
           values: |
             image:
               repository: docker.io/${{ vars.DOCKERHUB_USER }}/recall-db
-              tag: ${{ inputs.artifactVersion }}
+              tag: ${{ inputs.version }}
             env:
               DATABASE_SSL: ""
             secretEnv:
@@ -80,7 +119,7 @@ jobs:
         with:
           content: |-
             ## recall-db deployed to ${{ inputs.environment }}
-            - **Image:** recall-db:${{ inputs.artifactVersion }}
+            - **Image:** recall-db:${{ inputs.version }}
             - **Namespace:** ${{ vars.namespace }}
             - **Artifact ID:** ${{ inputs.artifact-id }}
           format: MARKDOWN
