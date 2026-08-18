@@ -52,10 +52,14 @@ on:
       component-repo:
         type: string
         required: true
-        default: ${{ cloudbees.scm.repositoryUrl }}
+        default: self
         description: >-
-          Leave as-is when dispatching: the default resolves to this
-          repository, which is correct here and wrong when called.
+          Leave as `self` when dispatching; it resolves to this repository.
+          The Application passes a real clone URL instead, because a called
+          workflow runs in the CALLER's repository context.
+          A default cannot itself be an expression: the literal text is passed
+          through unevaluated, and the checkout action's shell then fails with
+          "sh: syntax error: bad substitution".
 
 permissions:
   scm-token-own: read
@@ -68,7 +72,7 @@ jobs:
       - name: Checkout
         uses: cloudbees-io/checkout@v2
         with:
-          repository: ${{ inputs.component-repo }}
+          repository: ${{ inputs.component-repo != 'self' && inputs.component-repo || cloudbees.scm.repositoryUrl }}
           # version IS the commit the image was built from, so this pins the
           # chart to that commit rather than whatever main happens to be.
           ref: ${{ inputs.version }}
