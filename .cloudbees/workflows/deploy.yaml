@@ -81,6 +81,16 @@ jobs:
           chart-location: ${{ cloudbees.workspace }}/apps/recall-db/chart
           release-name: recall-db
           namespace: ${{ vars.namespace }}
+          # The namespace is provisioned ahead of the workshop, so Helm must not try to
+          # create it. The action defaults create-namespace to true, which makes skaffold
+          # issue a namespace create unconditionally. Kubernetes authorises before it
+          # checks existence, so an attendee's namespace-scoped credentials are rejected:
+          #
+          #   namespaces is forbidden: User "system:serviceaccount:...:deployer" cannot
+          #   create resource "namespaces" at the cluster scope
+          #
+          # which reads as a missing namespace rather than an unwanted create.
+          create-namespace: false
           values: |
             image:
               repository: docker.io/${{ vars.DOCKERHUB_USER }}/recall-db
