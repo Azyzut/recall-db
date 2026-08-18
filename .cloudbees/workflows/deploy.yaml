@@ -15,6 +15,16 @@ on:
       environment:
         type: string
         required: true
+      component-repo:
+        type: string
+        required: true
+        description: >-
+          Clone URL of THIS component's repository. Required when called,
+          because a reusable workflow runs in the CALLER's repository
+          context. checkout defaults to cloudbees.scm.repositoryUrl, which
+          then resolves to the Application repo, and the chart path does not
+          exist there:
+            realpath: /cloudbees/workspace/apps/<name>/chart: No such file
   workflow_dispatch:
     inputs:
       artifact-id:
@@ -39,6 +49,13 @@ on:
           - PROD
         default: DEV
         description: Which environment to deploy to.
+      component-repo:
+        type: string
+        required: true
+        default: ${{ cloudbees.scm.repositoryUrl }}
+        description: >-
+          Leave as-is when dispatching: the default resolves to this
+          repository, which is correct here and wrong when called.
 
 permissions:
   scm-token-own: read
@@ -50,6 +67,11 @@ jobs:
     steps:
       - name: Checkout
         uses: cloudbees-io/checkout@v2
+        with:
+          repository: ${{ inputs.component-repo }}
+          # version IS the commit the image was built from, so this pins the
+          # chart to that commit rather than whatever main happens to be.
+          ref: ${{ inputs.version }}
 
       - name: Check the version to deploy
         uses: docker://alpine:latest
