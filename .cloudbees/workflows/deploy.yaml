@@ -96,9 +96,55 @@ jobs:
               repository: docker.io/${{ vars.DOCKERHUB_USER }}/recall-db
               tag: ${{ inputs.version }}
             env:
-              DATABASE_SSL: ""
+              # The in-cluster PostgreSQL does not serve TLS, and the client code treats
+              # any value other than the literal string "disable" as SSL-required — a
+              # default written when this connected to RDS. An empty string therefore
+              # still requires SSL, and the migration Job fails 30 times with
+              # "The server does not support SSL connections" before the deploy reports
+              # only BackoffLimitExceeded.
+              #
+              # Traffic stays inside the attendee namespace on a dedicated workshop
+              # cluster, and the data is disposable. Do not carry this to a shared or
+              # long-lived database.
+              DATABASE_SSL: "disable"
             secretEnv:
               DATABASE_URL: ${{ toJSON(secrets.DATABASE_URL) }}
+
+      - name: Show what happened in the namespace
+        # `if: always()` rather than `if: failure()` - always() is proven to work in
+        # Unify, failure() is not, and an unsupported function is fatal at dispatch.
+        # On success this prints a single line.
+        #
+        # Exists because Helm reports only a summary: a failed migration surfaces as
+        # BackoffLimitExceeded while the real cause sits in a pod log the attendee
+        # would need kubectl to read. In a workshop about pipelines, sending people to
+        # a terminal to find out why a deploy failed is a poor answer.
+        if: always()
+        uses: docker://bitnami/kubectl:latest
+        env:
+          KCFG_B64: ${{ secrets.kubeconfig }}
+          NS: ${{ vars.namespace }}
+        run: |
+          [ -n "$KCFG_B64" ] || exit 0
+          umask 077
+          mkdir -p /tmp/.kube
+          printf '%s' "$KCFG_B64" | tr -d '\r\n ' | base64 -d > /tmp/.kube/config 2>/dev/null || exit 0
+          export KUBECONFIG=/tmp/.kube/config
+          UNHEALTHY=$(kubectl get pods -n "$NS" --no-headers 2>/dev/null | awk '$3 != "Running" && $3 != "Completed" { print $1 }')
+          if [ -z "$UNHEALTHY" ]; then
+            echo "All pods in $NS are Running or Completed."
+            exit 0
+          fi
+          echo "=== Pods ==="
+          kubectl get pods -n "$NS" 2>/dev/null
+          for p in $UNHEALTHY; do
+            echo
+            echo "=== Logs: $p (last 40 lines) ==="
+            kubectl logs "$p" -n "$NS" --tail=40 2>&1 | tail -40
+          done
+          echo
+          echo "=== Recent events ==="
+          kubectl get events -n "$NS" --sort-by=.lastTimestamp 2>/dev/null | tail -15
 
       - name: Register deployed artifact
         if: ${{ inputs.artifact-id != 'test-deploy' && inputs.artifact-id != 'manual' && inputs.artifact-id != '' }}
