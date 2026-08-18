@@ -4,7 +4,13 @@
 // Free API, no authentication required
 
 export interface FDARecallResult {
-  recall_number: string;
+  // OPTIONAL, despite appearances. The enforcement endpoints (drug, food) return
+  // recall_number and event_id; device/recall.json returns neither — it identifies
+  // records with cfres_id / product_res_number / res_event_number instead.
+  //
+  // These were declared required, which typechecked cleanly and was simply false.
+  // That lie hid a bug which silently discarded every device recall.
+  recall_number?: string;
   reason_for_recall: string;
   status: string;
   distribution_pattern: string;
@@ -18,8 +24,34 @@ export interface FDARecallResult {
   report_date: string;
   recall_initiation_date: string;
   voluntary_mandated: string;
-  event_id: string;
+  event_id?: string;
+  // device/recall.json identifiers.
+  cfres_id?: string;
+  product_res_number?: string;
+  res_event_number?: string;
   termination_date?: string;
+}
+
+/**
+ * The identifier for an FDA record, whichever endpoint it came from.
+ *
+ * The enforcement endpoints (drug, food) use recall_number and event_id.
+ * device/recall.json uses none of those — it has cfres_id, product_res_number and
+ * res_event_number instead. Code that checked only the first two treated every
+ * device record as unidentifiable, which caused silent data loss in dedupe and
+ * `fda_undefined` ids downstream.
+ *
+ * Returns undefined only if the record carries no recognisable identifier at all.
+ * Callers must handle that rather than interpolating it into a string.
+ */
+export function recallIdentifier(r: FDARecallResult): string | undefined {
+  return (
+    r.recall_number ||
+    r.event_id ||
+    r.product_res_number ||
+    r.cfres_id ||
+    r.res_event_number
+  );
 }
 
 export interface FDASearchResponse {
@@ -207,8 +239,21 @@ export class FDAClient {
 
     for (const categoryResults of results) {
       for (const result of categoryResults) {
-        const key = result.recall_number || result.event_id;
-        if (key && !seen.has(key)) {
+        // Every endpoint names its identifier differently. device/recall.json has
+        // no recall_number and no event_id at all, so a key built from only
+        // those two is undefined for every device record.
+        const key = recallIdentifier(result);
+
+        // A record with no recognisable identifier is KEPT, not dropped. The
+        // previous `if (key && ...)` discarded it, turning an unrecognised ID
+        // format into silent data loss that reached the user as "no recalls
+        // found" with nothing logged. Losing a duplicate is a far smaller
+        // problem than losing every result.
+        if (!key) {
+          allResults.push(result);
+          continue;
+        }
+        if (!seen.has(key)) {
           seen.add(key);
           allResults.push(result);
         }
