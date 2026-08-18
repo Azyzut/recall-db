@@ -32,9 +32,13 @@ on:
           The image tag to deploy: the commit SHA shown as Version in the build's
           evidence tab. Builds push only a SHA tag, so there is no `latest`.
       environment:
-        type: string
-        required: true
+        type: choice
+        options:
+          - DEV
+          - STAGING
+          - PROD
         default: DEV
+        description: Which environment to deploy to.
 
 permissions:
   scm-token-own: read
