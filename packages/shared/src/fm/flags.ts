@@ -14,4 +14,13 @@ export const configFlags = {};
 
 // ── String variant (target-group targeting) ────────────────────
 // @ts-ignore — RoxString exists in rox-node v6
-export const headerTheme = new Rox.RoxString('default', ['default', 'smb']);
+// Four variants, matching matrixThemeConfigs in apps/web-ui/app/matrix/page.tsx
+// and navThemeConfigs in apps/web-ui/components/Navbar.tsx. `dark` and `branded`
+// were styled but unreachable: the flag offered only two variants, so nothing
+// could ever select them.
+//
+// The variant list MUST match the browser-side declaration in
+// apps/web-ui/components/providers/FMProvider.tsx. Rox registers variants from
+// whichever SDK connects, and a mismatch means the options differ depending on
+// which service reported last.
+export const headerTheme = new Rox.RoxString('default', ['default', 'dark', 'smb', 'branded']);
