@@ -103,6 +103,56 @@ export interface FDASearchOptions {
 /**
  * openFDA API Client for drug, device, and food recall data
  */
+const MAX_ATTEMPTS = Number(process.env.FDA_MAX_ATTEMPTS ?? 3);
+
+/**
+ * Thrown when openFDA rate limits us and retries did not clear it.
+ *
+ * Distinct from "no results" ON PURPOSE. Returning [] for a 429 makes a throttled
+ * request indistinguishable from a genuine empty result, which reaches the user as
+ * "no recalls found" — the most misleading failure this client can produce, and the
+ * one that cost a morning of debugging when a different bug produced the same
+ * symptom.
+ */
+export class FDARateLimitError extends Error {
+  // Declared and assigned separately, not as constructor parameter properties:
+  // those emit runtime code, which `erasableSyntaxOnly` forbids because Node's
+  // native type stripping cannot execute them. tsc alone would have accepted the
+  // shorter form and the failure would have appeared at boot.
+  readonly category: string;
+  readonly attempts: number;
+
+  constructor(category: string, attempts: number) {
+    super(`openFDA rate limited ${category} after ${attempts} attempts`);
+    this.name = 'FDARateLimitError';
+    this.category = category;
+    this.attempts = attempts;
+  }
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * openFDA allows 240 requests/minute and 1,000/day per IP without a key, or
+ * 120,000/day with one. Every attendee shares one NAT gateway address, so the
+ * per-minute limit is the one a workshop hits — and it clears within the minute,
+ * which makes it worth waiting out.
+ *
+ * Respects Retry-After when present, otherwise exponential backoff with jitter so
+ * simultaneous attendees do not retry in lockstep.
+ */
+function retryDelayMs(response: Response, attempt: number): number {
+  const header = response.headers.get('retry-after');
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds)) return Math.min(seconds * 1000, 65_000);
+    const date = Date.parse(header);
+    if (!Number.isNaN(date)) return Math.min(Math.max(date - Date.now(), 0), 65_000);
+  }
+  const base = 2_000 * Math.pow(4, attempt);   // 2s, 8s, 32s
+  return Math.min(base, 32_000) + Math.floor(Math.random() * 1_000);
+}
+
 export class FDAClient {
   /**
    * Resolve product category strings to FDA endpoint categories
@@ -154,6 +204,8 @@ export class FDAClient {
     category: FDAProductCategory,
     options: FDASearchOptions
   ): Promise<FDARecallResult[]> {
+    // A rate-limit error propagates: retrying broadly here would fire another
+    // request into a limit openFDA has just reported.
     const results = await this.fetchEndpoint(category, options);
 
     // If narrow search returned nothing, retry with broad search (drop product description and state filters)
@@ -168,7 +220,8 @@ export class FDAClient {
   private async fetchEndpoint(
     category: FDAProductCategory,
     options: FDASearchOptions,
-    broad: boolean = false
+    broad: boolean = false,
+    attempt: number = 0
   ): Promise<FDARecallResult[]> {
     const baseUrl = FDA_ENDPOINTS[category];
     const searchQuery = this.buildSearchQuery(options, broad);
@@ -188,11 +241,35 @@ export class FDAClient {
       });
 
       if (!response.ok) {
-        // openFDA returns 404 when no results are found
+        // openFDA returns 404 when no results are found — a real answer.
         if (response.status === 404) {
           console.log(`[FDA] No results for ${category}${broad ? ' (broad)' : ''}`);
           return [];
         }
+
+        // 429 is rate limiting, 5xx is usually transient. Both are worth waiting
+        // out rather than reporting as "no recalls".
+        if (response.status === 429 || response.status >= 500) {
+          if (attempt < MAX_ATTEMPTS - 1) {
+            const wait = retryDelayMs(response, attempt);
+            console.warn(
+              `[FDA] ${category} got ${response.status}; retrying in ` +
+              `${Math.round(wait / 1000)}s (attempt ${attempt + 1}/${MAX_ATTEMPTS})`
+            );
+            await sleep(wait);
+            return this.fetchEndpoint(category, options, broad, attempt + 1);
+          }
+          if (response.status === 429) {
+            console.error(
+              `[FDA] ${category} RATE LIMITED after ${MAX_ATTEMPTS} attempts. ` +
+              `openFDA allows 1,000 requests/day per IP without an API key, and every ` +
+              `attendee shares one NAT gateway address. Set FDA_API_KEY to raise that ` +
+              `to 120,000/day.`
+            );
+            throw new FDARateLimitError(category, MAX_ATTEMPTS);
+          }
+        }
+
         console.warn(`[FDA] ${category} search failed: ${response.status}`);
         return [];
       }
@@ -213,6 +290,9 @@ export class FDAClient {
         product_type: result.product_type || productTypeMap[category],
       }));
     } catch (error) {
+      // Must propagate: swallowing this would turn a throttled request back
+      // into a silent empty result, which is what this class exists to prevent.
+      if (error instanceof FDARateLimitError) throw error;
       console.error(`[FDA] Error searching ${category}:`, error);
       return [];
     }
@@ -231,7 +311,19 @@ export class FDAClient {
       this.searchEndpoint(category, options)
     );
 
-    const results = await Promise.all(promises);
+    // allSettled, not all: one rate-limited endpoint must not discard results
+    // from the others, and the summary line has to distinguish "nothing matched"
+    // from "we never got an answer".
+    const settled = await Promise.allSettled(promises);
+    const results = settled.map(r => (r.status === 'fulfilled' ? r.value : []));
+    const throttled = settled.filter(
+      r => r.status === 'rejected' && r.reason instanceof FDARateLimitError
+    ).length;
+    for (const r of settled) {
+      if (r.status === 'rejected' && !(r.reason instanceof FDARateLimitError)) {
+        console.error('[FDA] endpoint failed:', r.reason);
+      }
+    }
 
     // Flatten and deduplicate by recall_number
     const allResults: FDARecallResult[] = [];
@@ -260,7 +352,16 @@ export class FDAClient {
       }
     }
 
-    console.log(`[FDA] Total results across ${categories.length} endpoints: ${allResults.length}`);
+    if (throttled > 0) {
+      console.error(
+        `[FDA] ${throttled}/${categories.length} endpoint(s) were RATE LIMITED. ` +
+        `Results below are incomplete — this is not "no recalls found".`
+      );
+    }
+    console.log(
+      `[FDA] Total results across ${categories.length} endpoints: ${allResults.length}` +
+      (throttled > 0 ? ` (${throttled} rate limited)` : '')
+    );
     return allResults;
   }
 
