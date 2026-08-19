@@ -18,6 +18,8 @@
 // registered, so these can never collide with a real company.
 import type { Client } from 'pg';
 import bcrypt from 'bcryptjs';
+import { fdaClient, recallIdentifier } from '@recall/shared/recall/fda-client';
+import type { FDARecallResult } from '@recall/shared/recall/fda-client';
 
 const SALT_ROUNDS = 10;
 
@@ -29,6 +31,7 @@ interface SeedCompany {
   state: string;
   email: string;
   bucket: string;
+  productCategory: string;
 }
 
 const COMPANIES: SeedCompany[] = [
@@ -40,6 +43,7 @@ const COMPANIES: SeedCompany[] = [
     state: 'OR',
     email: 'enterprise@example.com',
     bucket: 'enterprise',
+    productCategory: 'Medical Devices',
   },
   {
     website: 'https://harborline-foods.example.com',
@@ -49,6 +53,7 @@ const COMPANIES: SeedCompany[] = [
     state: 'WA',
     email: 'midmarket@example.com',
     bucket: 'mid-market',
+    productCategory: 'Food and Beverages',
   },
   {
     website: 'https://tidepool-supply.example.com',
@@ -58,86 +63,10 @@ const COMPANIES: SeedCompany[] = [
     state: 'CA',
     email: 'small@example.com',
     bucket: 'small',
+    productCategory: 'Medical Devices',
   },
 ];
 
-
-// Real openFDA records, fetched from api.fda.gov and reproduced verbatim.
-//
-// NOT invented. Putting fabricated regulatory text in front of a customer is a bad
-// idea on its own, and these rows are indistinguishable from discovered ones — an
-// attendee reading a made-up citation would have no way to tell. openFDA data is
-// public and its licence permits reuse: https://open.fda.gov/license/
-//
-// Field mapping follows convertFDAResult() in
-// apps/recall-worker/lib/recall/recall-discovery.ts, so a seeded requirement and a
-// discovered one are the same shape.
-interface SeedRecall {
-  identifier: string;
-  productDescription: string;
-  reason: string;
-  firm: string;
-  city: string;
-  state: string;
-  classification: string;
-  status: string;
-  productType: string;
-}
-
-const RECALLS: Record<string, SeedRecall[]> = {
-  // Device recalls, Oregon. device/recall.json has no recall_number, so the
-  // identifier is product_res_number — the very field whose absence made every
-  // device discovery return nothing until 18 Aug 2026.
-  'northwind-devices.example.com': [
-    {
-      identifier: 'Z-0010-2021',
-      productDescription: 'Velosorb Fast Braided Absorbable Suture: Covidien Velosorb 6/0 Undyed 18" P-10 Cutting, Product Number: SV9913',
-      reason: 'The surgical suture is non-sterile. Use could compromise the sterile field, increase risk of a surgical site infection, and increase break strength retention.',
-      firm: 'Riverpoint Medical, LLC',
-      city: 'Portland', state: 'OR',
-      classification: 'Class II', status: 'Terminated', productType: 'Device',
-    },
-    {
-      identifier: 'Z-0011-2008',
-      productDescription: 'Brain Heart Infusion Agar (BHIA) + Vancomycin 6 MCG/ML microbiological media plates',
-      reason: 'Marketed a regulated product without a 510(k).',
-      firm: 'Pml Microbiologicals Inc.',
-      city: 'Wilsonville', state: 'OR',
-      classification: 'Class II', status: 'Terminated', productType: 'Device',
-    },
-  ],
-  // Food enforcement reports, Washington.
-  'harborline-foods.example.com': [
-    {
-      identifier: 'F-0163-2018',
-      productDescription: 'Stir Fry Kit, Alaska Carrot, 1 x 11 lb. per case, UPC 45009 85749 1',
-      reason: 'Stir Fry Kit product is recalled due to possible contamination with Listeria monocytogenes. The broccoli used in processing this item has been recalled by vendor Mann Packing of Salinas, California.',
-      firm: 'Triple B Corporation',
-      city: 'Seattle', state: 'WA',
-      classification: 'Class I', status: 'Terminated', productType: 'Food',
-    },
-    {
-      identifier: 'F-1578-2018',
-      productDescription: 'Coffee Toffee - 4 oz. packages. UPC 6 55974 89001 2.',
-      reason: 'Coffee Toffee is recalled because pecan is listed on the Ingredients statement but it is not listed in the Contains statement.',
-      firm: 'Yukon Jackson',
-      city: 'Seattle', state: 'WA',
-      classification: 'Class III', status: 'Terminated', productType: 'Food',
-    },
-  ],
-  // The small company gets one, so the three accounts differ in volume as well as
-  // in companySize — useful when demonstrating a targeting rule.
-  'tidepool-supply.example.com': [
-    {
-      identifier: 'Z-0011-2008',
-      productDescription: 'Brain Heart Infusion Agar (BHIA) + Vancomycin 6 MCG/ML microbiological media plates',
-      reason: 'Marketed a regulated product without a 510(k).',
-      firm: 'Pml Microbiologicals Inc.',
-      city: 'Wilsonville', state: 'OR',
-      classification: 'Class II', status: 'Terminated', productType: 'Device',
-    },
-  ],
-};
 
 const normalize = (url: string) =>
   url.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase();
@@ -202,7 +131,26 @@ export async function seed(client: Client): Promise<void> {
         [companyId, JSON.stringify({ seeded: true, source: 'openFDA', note: 'Seeded from real openFDA records.' })],
       );
       const discoveryId = created.rows[0].id;
-      const rows = RECALLS[normalize(c.website)] ?? [];
+
+      // A REAL discovery, run now, rather than recall records pinned in source.
+      // Pinned data ages: a 2018 food recall shown in a workshop years later looks
+      // stale, and any change upstream would silently freeze the demo in the past.
+      // This queries openFDA with the seeded company's own category and state, so
+      // the accounts arrive with whatever is current.
+      //
+      // Best-effort on purpose. openFDA is rate limited per IP and every attendee
+      // shares one NAT gateway, so a failure here must not fail the migration Job.
+      // An empty discovery still renders correctly — the matrix shows "No FDA
+      // requirements discovered yet" and the attendee runs one themselves.
+      let rows: FDARecallResult[] = [];
+      try {
+        rows = await fdaClient.searchByCategory(c.productCategory, { state: c.state, limit: 5 });
+        console.log(`[seed] openFDA returned ${rows.length} recall(s) for ${c.companyName}`);
+      } catch (err) {
+        console.log(`[seed] openFDA lookup failed for ${c.companyName}: ${(err as Error).message}`);
+        console.log('[seed] continuing with an empty discovery');
+      }
+
       for (const r of rows) {
         await client.query(
           `INSERT INTO requirements
@@ -211,22 +159,23 @@ export async function seed(client: Client): Promise<void> {
            VALUES ($1, $2, $3, $4, $5, 'FDA', $6, $7, $8, 'discovery', 'pending')`,
           [
             discoveryId, companyId,
-            `FDA ${r.identifier}`,
-            r.reason.substring(0, 200),
-            r.productDescription.substring(0, 120),
-            r.productType,
-            [r.reason, `Firm: ${r.firm}`, `Classification: ${r.classification}`, `Status: ${r.status}`].join('. '),
+            `FDA ${recallIdentifier(r) ?? 'unknown'}`,
+            (r.reason_for_recall ?? 'Recall').substring(0, 200),
+            (r.product_description ?? 'Unknown Product').substring(0, 120),
+            r.product_type ?? 'Unknown',
+            [r.reason_for_recall, `Firm: ${r.recalling_firm}`, `Classification: ${r.classification}`, `Status: ${r.status}`]
+              .filter(Boolean).join('. '),
             [
-              `Product: ${r.productDescription}`,
-              `Reason: ${r.reason}`,
-              `Firm: ${r.firm} (${r.city}, ${r.state})`,
+              `Product: ${r.product_description}`,
+              `Reason: ${r.reason_for_recall}`,
+              `Firm: ${r.recalling_firm} (${r.city}, ${r.state})`,
               `Classification: ${r.classification}`,
               `Status: ${r.status}`,
             ].join('\n'),
           ],
         );
       }
-      console.log(`[seed] discovery for ${c.companyName} with ${rows.length} real FDA recall(s)`);
+      console.log(`[seed] discovery for ${c.companyName}: ${rows.length} requirement(s) stored`);
     }
 
     const user = await client.query<{ id: string }>(

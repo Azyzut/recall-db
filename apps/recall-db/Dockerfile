@@ -19,9 +19,15 @@ ENV NODE_ENV=production
 # the root manifest so npm can resolve the workspace graph; --omit=dev skips
 # TypeScript, which is not needed when nothing is compiled.
 COPY --chown=node:node package.json package-lock.json ./
+# packages/shared is now a workspace dependency — the seed runs a real openFDA
+# discovery through the shared fda-client rather than pinning recall records in
+# source. Its manifest is needed for npm to resolve the graph.
+COPY --chown=node:node packages/shared/package.json ./packages/shared/
 COPY --chown=node:node apps/recall-db/package.json ./apps/recall-db/
 RUN npm ci --workspace @recall/db --include-workspace-root --omit=dev
 
+# Consumed as TypeScript, not built — same as the other components.
+COPY --chown=node:node packages/shared ./packages/shared
 COPY --chown=node:node apps/recall-db ./apps/recall-db
 
 # Run as the unprivileged user the base image already provides.

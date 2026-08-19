@@ -10,8 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "pg": "^8.16.3",
-    "bcryptjs": "^3.0.2"
+    "@recall/shared": "*",
+    "bcryptjs": "^3.0.2",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@types/node": "^20",

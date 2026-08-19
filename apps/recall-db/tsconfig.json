@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    "paths": {
+      "@/*": ["./*"],
+      "@recall/shared/*": ["../../packages/shared/src/*"]
+    },
     "target": "ES2022",
     "lib": ["esnext"],
     "skipLibCheck": true,
