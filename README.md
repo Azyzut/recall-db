@@ -3,7 +3,7 @@
 Database schema and migration runner. Runs as a Kubernetes Job before every other component.
 
 One of five components of the Product Recall Tracker. Start at the
-[hands-on lab](../recall-tracker-hands-on-lab) rather than here.
+[hands-on lab](https://github.com/cloudbees/recall-tracker-hands-on-lab) rather than here.
 
 ## Layout
 
