@@ -61,6 +61,84 @@ const COMPANIES: SeedCompany[] = [
   },
 ];
 
+
+// Real openFDA records, fetched from api.fda.gov and reproduced verbatim.
+//
+// NOT invented. Putting fabricated regulatory text in front of a customer is a bad
+// idea on its own, and these rows are indistinguishable from discovered ones — an
+// attendee reading a made-up citation would have no way to tell. openFDA data is
+// public and its licence permits reuse: https://open.fda.gov/license/
+//
+// Field mapping follows convertFDAResult() in
+// apps/recall-worker/lib/recall/recall-discovery.ts, so a seeded requirement and a
+// discovered one are the same shape.
+interface SeedRecall {
+  identifier: string;
+  productDescription: string;
+  reason: string;
+  firm: string;
+  city: string;
+  state: string;
+  classification: string;
+  status: string;
+  productType: string;
+}
+
+const RECALLS: Record<string, SeedRecall[]> = {
+  // Device recalls, Oregon. device/recall.json has no recall_number, so the
+  // identifier is product_res_number — the very field whose absence made every
+  // device discovery return nothing until 18 Aug 2026.
+  'northwind-devices.example.com': [
+    {
+      identifier: 'Z-0010-2021',
+      productDescription: 'Velosorb Fast Braided Absorbable Suture: Covidien Velosorb 6/0 Undyed 18" P-10 Cutting, Product Number: SV9913',
+      reason: 'The surgical suture is non-sterile. Use could compromise the sterile field, increase risk of a surgical site infection, and increase break strength retention.',
+      firm: 'Riverpoint Medical, LLC',
+      city: 'Portland', state: 'OR',
+      classification: 'Class II', status: 'Terminated', productType: 'Device',
+    },
+    {
+      identifier: 'Z-0011-2008',
+      productDescription: 'Brain Heart Infusion Agar (BHIA) + Vancomycin 6 MCG/ML microbiological media plates',
+      reason: 'Marketed a regulated product without a 510(k).',
+      firm: 'Pml Microbiologicals Inc.',
+      city: 'Wilsonville', state: 'OR',
+      classification: 'Class II', status: 'Terminated', productType: 'Device',
+    },
+  ],
+  // Food enforcement reports, Washington.
+  'harborline-foods.example.com': [
+    {
+      identifier: 'F-0163-2018',
+      productDescription: 'Stir Fry Kit, Alaska Carrot, 1 x 11 lb. per case, UPC 45009 85749 1',
+      reason: 'Stir Fry Kit product is recalled due to possible contamination with Listeria monocytogenes. The broccoli used in processing this item has been recalled by vendor Mann Packing of Salinas, California.',
+      firm: 'Triple B Corporation',
+      city: 'Seattle', state: 'WA',
+      classification: 'Class I', status: 'Terminated', productType: 'Food',
+    },
+    {
+      identifier: 'F-1578-2018',
+      productDescription: 'Coffee Toffee - 4 oz. packages. UPC 6 55974 89001 2.',
+      reason: 'Coffee Toffee is recalled because pecan is listed on the Ingredients statement but it is not listed in the Contains statement.',
+      firm: 'Yukon Jackson',
+      city: 'Seattle', state: 'WA',
+      classification: 'Class III', status: 'Terminated', productType: 'Food',
+    },
+  ],
+  // The small company gets one, so the three accounts differ in volume as well as
+  // in companySize — useful when demonstrating a targeting rule.
+  'tidepool-supply.example.com': [
+    {
+      identifier: 'Z-0011-2008',
+      productDescription: 'Brain Heart Infusion Agar (BHIA) + Vancomycin 6 MCG/ML microbiological media plates',
+      reason: 'Marketed a regulated product without a 510(k).',
+      firm: 'Pml Microbiologicals Inc.',
+      city: 'Wilsonville', state: 'OR',
+      classification: 'Class II', status: 'Terminated', productType: 'Device',
+    },
+  ],
+};
+
 const normalize = (url: string) =>
   url.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').toLowerCase();
 
@@ -117,12 +195,38 @@ export async function seed(client: Client): Promise<void> {
       [companyId],
     );
     if (discovery.rows.length === 0) {
-      await client.query(
+      const created = await client.query<{ id: string }>(
         `INSERT INTO discoveries ("companyId", agency, requirements, metadata)
-         VALUES ($1, 'FDA', '[]'::jsonb, $2::jsonb)`,
-        [companyId, JSON.stringify({ seeded: true, note: 'Empty discovery so the matrix loads; run a discovery to populate.' })],
+         VALUES ($1, 'FDA', '[]'::jsonb, $2::jsonb)
+         RETURNING id`,
+        [companyId, JSON.stringify({ seeded: true, source: 'openFDA', note: 'Seeded from real openFDA records.' })],
       );
-      console.log(`[seed] discovery for ${c.companyName} (empty; run a discovery to populate)`);
+      const discoveryId = created.rows[0].id;
+      const rows = RECALLS[normalize(c.website)] ?? [];
+      for (const r of rows) {
+        await client.query(
+          `INSERT INTO requirements
+             ("discoveryId", "companyId", citation, title, name, agency, part,
+              excerpt, "fullText", source, status)
+           VALUES ($1, $2, $3, $4, $5, 'FDA', $6, $7, $8, 'discovery', 'pending')`,
+          [
+            discoveryId, companyId,
+            `FDA ${r.identifier}`,
+            r.reason.substring(0, 200),
+            r.productDescription.substring(0, 120),
+            r.productType,
+            [r.reason, `Firm: ${r.firm}`, `Classification: ${r.classification}`, `Status: ${r.status}`].join('. '),
+            [
+              `Product: ${r.productDescription}`,
+              `Reason: ${r.reason}`,
+              `Firm: ${r.firm} (${r.city}, ${r.state})`,
+              `Classification: ${r.classification}`,
+              `Status: ${r.status}`,
+            ].join('\n'),
+          ],
+        );
+      }
+      console.log(`[seed] discovery for ${c.companyName} with ${rows.length} real FDA recall(s)`);
     }
 
     const user = await client.query<{ id: string }>(
