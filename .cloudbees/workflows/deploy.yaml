@@ -139,6 +139,10 @@ jobs:
               DATABASE_SSL: "disable"
             secretEnv:
               DATABASE_URL: ${{ toJSON(secrets.DATABASE_URL) }}
+              # Raises the openFDA limit from 1,000/day per IP to 120,000/day per key.
+              # Every attendee shares one NAT gateway address, so without this the whole
+              # cohort competes for the per-IP allowance.
+              FDA_API_KEY: ${{ toJSON(secrets.FDA_API_KEY != 'unset' && secrets.FDA_API_KEY || '') }}
               # Demo accounts are seeded only when this is a real value. `unset` maps to
               # empty, which skips seeding — see apps/recall-db/src/seed.ts.
               LOGIN_PASSWORD: ${{ toJSON(secrets.LOGIN_PASSWORD != 'unset' && secrets.LOGIN_PASSWORD || '') }}

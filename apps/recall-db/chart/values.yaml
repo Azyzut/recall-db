@@ -12,6 +12,8 @@ env:
   DB_CONNECT_DELAY_MS: "2000"
 
 secretEnv:
+  # openFDA API key. Blank means unauthenticated: 1,000 requests/day per IP.
+  FDA_API_KEY: ""
   DATABASE_URL: ""
   # Blank disables seeding. See apps/recall-db/src/seed.ts.
   LOGIN_PASSWORD: ""

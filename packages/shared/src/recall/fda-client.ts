@@ -106,6 +106,19 @@ export interface FDASearchOptions {
 const MAX_ATTEMPTS = Number(process.env.FDA_MAX_ATTEMPTS ?? 3);
 
 /**
+ * openFDA API key. Optional — without it the limit is 1,000 requests/day per IP,
+ * and every attendee shares one NAT gateway address. With it, 120,000/day per key.
+ *
+ * `unset` is how Unify stores "not configured yet", since it will not save an empty
+ * variable value. Treated as absent so the client falls back to unauthenticated
+ * rather than sending the literal word as a key.
+ */
+const API_KEY =
+  process.env.FDA_API_KEY && process.env.FDA_API_KEY !== 'unset'
+    ? process.env.FDA_API_KEY
+    : undefined;
+
+/**
  * Thrown when openFDA rate limits us and retries did not clear it.
  *
  * Distinct from "no results" ON PURPOSE. Returning [] for a 429 makes a throttled
@@ -228,12 +241,20 @@ export class FDAClient {
     const limit = options.limit || 20;
     const skip = options.skip || 0;
 
-    let url = `${baseUrl}?limit=${limit}&skip=${skip}`;
+    // openFDA's docs specify api_key BEFORE other parameters such as search.
+    const auth = API_KEY ? `api_key=${encodeURIComponent(API_KEY)}&` : '';
+    let url = `${baseUrl}?${auth}limit=${limit}&skip=${skip}`;
     if (searchQuery) {
       url += `&search=${encodeURIComponent(searchQuery)}`;
     }
 
-    console.log(`[FDA] Searching ${category}${broad ? ' (broad)' : ''}: ${url}`);
+    // Log the URL WITHOUT the key. It was previously echoed whole, so adding an
+    // api_key parameter would have written a credential into every pod log and
+    // into the workflow output attendees can read.
+    console.log(
+      `[FDA] Searching ${category}${broad ? ' (broad)' : ''}: ` +
+      url.replace(/api_key=[^&]*&?/, '') + (API_KEY ? ' (authenticated)' : '')
+    );
 
     try {
       const response = await fetch(url, {
