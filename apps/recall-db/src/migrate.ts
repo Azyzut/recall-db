@@ -19,6 +19,7 @@
 // stripping — no build step.
 
 import { readdir, readFile } from 'node:fs/promises';
+import { seed } from './seed.ts';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -114,6 +115,9 @@ async function main() {
         process.exit(1);
       }
     }
+
+    // Demo accounts, after the schema exists. No-op without SEED_PASSWORD.
+    await seed(client);
 
     console.log(
       count === 0

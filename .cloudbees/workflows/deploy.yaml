@@ -139,6 +139,9 @@ jobs:
               DATABASE_SSL: "disable"
             secretEnv:
               DATABASE_URL: ${{ toJSON(secrets.DATABASE_URL) }}
+              # Demo accounts are seeded only when this is a real value. `unset` maps to
+              # empty, which skips seeding — see apps/recall-db/src/seed.ts.
+              LOGIN_PASSWORD: ${{ toJSON(secrets.LOGIN_PASSWORD != 'unset' && secrets.LOGIN_PASSWORD || '') }}
 
       - name: Show what happened in the namespace
         # `if: always()` rather than `if: failure()` - always() is proven to work in

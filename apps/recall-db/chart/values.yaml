@@ -13,6 +13,8 @@ env:
 
 secretEnv:
   DATABASE_URL: ""
+  # Blank disables seeding. See apps/recall-db/src/seed.ts.
+  LOGIN_PASSWORD: ""
 
 existingSecret: ""
 
