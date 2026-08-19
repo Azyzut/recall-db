@@ -14,6 +14,15 @@ export const configFlags = {};
 
 // ── String variant (target-group targeting) ────────────────────
 // @ts-ignore — RoxString exists in rox-node v6
+// DO NOT DELETE A FLAG IN CLOUDBEES FEATURE MANAGEMENT TO "RESET" IT.
+// Deletion is irreversible and reserves the name — an SDK cannot recreate it, and
+// reusing the name requires a CloudBees Support request. That is how the previous
+// A flag registered with two variants cannot later be widened to four; deleting it
+// to force re-registration destroys the name for the whole organisation.
+//
+// A flag's variant list is fixed at first registration. Get it right before the
+// first deploy, or ship a new flag name.
+//
 // Four variants, matching matrixThemeConfigs in apps/web-ui/app/matrix/page.tsx
 // and navThemeConfigs in apps/web-ui/components/Navbar.tsx. `dark` and `branded`
 // were styled but unreachable: the flag offered only two variants, so nothing
