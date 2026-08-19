@@ -104,6 +104,27 @@ export async function seed(client: Client): Promise<void> {
       console.log(`[seed] company  ${c.companyName} (${c.employeeCount} employees, ${c.bucket})`);
     }
 
+    // A company with no discoveries row is a state the app cannot reach on its own:
+    // /api/compliance/me returns 404 for it, and the matrix has nothing to render.
+    // The worker always creates this row before scanning, so seeding one puts the
+    // account in the same shape a real discovery would.
+    //
+    // Requirements are left empty on purpose. Fabricating compliance obligations
+    // would put invented regulatory text in front of customers; the attendee
+    // populates it for real with "Find More Recalls" in Module 06.
+    const discovery = await client.query<{ id: string }>(
+      'SELECT id FROM discoveries WHERE "companyId" = $1 LIMIT 1',
+      [companyId],
+    );
+    if (discovery.rows.length === 0) {
+      await client.query(
+        `INSERT INTO discoveries ("companyId", agency, requirements, metadata)
+         VALUES ($1, 'FDA', '[]'::jsonb, $2::jsonb)`,
+        [companyId, JSON.stringify({ seeded: true, note: 'Empty discovery so the matrix loads; run a discovery to populate.' })],
+      );
+      console.log(`[seed] discovery for ${c.companyName} (empty; run a discovery to populate)`);
+    }
+
     const user = await client.query<{ id: string }>(
       'SELECT id FROM users WHERE email = $1 LIMIT 1',
       [c.email.toLowerCase()],
