@@ -85,11 +85,17 @@ export async function seed(client: Client): Promise<void> {
 
     let companyId = existing.rows[0]?.id;
     if (!companyId) {
+      // discoveredBy is the enum discovered_by_type, which allows exactly
+      // 'ANONYMOUS' and 'PAID_USER' (000_baseline.sql:34). A seeded account has a
+      // real login, so PAID_USER is the honest value — and inventing a third one
+      // fails at insert with:
+      //   invalid input value for enum discovered_by_type: "..."
+
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO companies
            (website, "normalizedWebsite", "companyName", "naicsCode",
             "employeeCount", state, "contactEmail", "discoveredBy")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'REGISTERED')
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'PAID_USER')
          RETURNING id`,
         [c.website, normalize(c.website), c.companyName, c.naicsCode,
          c.employeeCount, c.state, c.email],
