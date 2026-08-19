@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the example MUST be committed: it is the only place the app's required
+# configuration is written down, and the generator ships it to attendees.
+!.env.example
 
 # vercel
 .vercel

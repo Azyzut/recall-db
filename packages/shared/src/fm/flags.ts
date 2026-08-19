@@ -23,6 +23,19 @@ export const configFlags = {};
 // A flag's variant list is fixed at first registration. Get it right before the
 // first deploy, or ship a new flag name.
 //
+// Variant names describe how each theme LOOKS, so the list reads as prose in the
+// Unify UI where a facilitator points at it:
+//   default   corporate blue and cyan, the baseline
+//   dark      near-black surfaces, greyscale accents
+//   vibrant   saturated purple and pink
+//   branded   CloudBees blue and purple, i.e. re-skinned for a customer
+//
+// Previously `smb`, which expanded to nothing a reader could see, then briefly
+// `small-business`, which named an audience rather than an appearance — and the
+// theme is not tied to company size except by whatever targeting rule you write.
+// `pastel` was considered and rejected: these are 500/600-weight saturated colours,
+// not desaturated tints.
+//
 // Four variants, matching matrixThemeConfigs in apps/web-ui/app/matrix/page.tsx
 // and navThemeConfigs in apps/web-ui/components/Navbar.tsx. `dark` and `branded`
 // were styled but unreachable: the flag offered only two variants, so nothing
@@ -32,4 +45,4 @@ export const configFlags = {};
 // apps/web-ui/components/providers/FMProvider.tsx. Rox registers variants from
 // whichever SDK connects, and a mismatch means the options differ depending on
 // which service reported last.
-export const headerTheme = new Rox.RoxString('default', ['default', 'dark', 'smb', 'branded']);
+export const headerTheme = new Rox.RoxString('default', ['default', 'dark', 'vibrant', 'branded']);
