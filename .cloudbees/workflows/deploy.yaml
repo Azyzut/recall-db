@@ -170,6 +170,14 @@ jobs:
           UNHEALTHY=$(kubectl get pods -n "$NS" --no-headers 2>/dev/null | awk '$3 != "Running" && $3 != "Completed" { print $1 }')
           if [ -z "$UNHEALTHY" ]; then
             echo "All pods in $NS are Running or Completed."
+            # The migrations are the substance of this deploy, and they run in a
+            # pre-install Helm hook Job whose output Helm never surfaces. Printing it
+            # here is the only way an attendee sees which migrations applied without
+            # opening a terminal.
+            echo
+            echo "=== Migrations ==="
+            kubectl logs -n "$NS" -l job-name=recall-db-migrate --tail=40 2>/dev/null \
+              || echo "(no migration log found - the Job may have been pruned)"
             exit 0
           fi
           echo "=== Pods ==="
