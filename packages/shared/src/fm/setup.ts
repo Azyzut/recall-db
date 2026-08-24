@@ -3,9 +3,42 @@ import Rox from 'rox-node';
 import { featureFlags, configFlags, headerTheme } from './flags.ts';
 
 const GLOBAL_KEY = '__fmRox__';
+const CONFIG_KEY = '__fmConfigChanges__';
 
 declare global {
   var __fmRox__: typeof Rox | undefined;
+  var __fmConfigChanges__: ConfigChange[] | undefined;
+}
+
+export interface ConfigChange {
+  /** When this process received the new configuration, epoch ms. */
+  ts: number;
+  /** SDK fetcher outcome, e.g. APPLIED_FROM_NETWORK. */
+  status: string;
+}
+
+/** Kept short: this is for correlating a demo, not for auditing. */
+const CONFIG_CHANGE_LIMIT = 20;
+
+/**
+ * Flag configuration changes this process has actually received.
+ *
+ * The handler below fires when the SDK applies new configuration, which is the
+ * moment the server's answers change — typically about two seconds after someone
+ * clicks in Feature Management. The SDK does not say WHICH flag changed, so this
+ * is a "something changed at this instant" marker, not an audit trail. That is
+ * exactly the right amount of information for the demonstration: the marker tells
+ * you where to look, and Feature Management's audit history tells you what to
+ * roll back.
+ */
+export function getConfigChanges(): ConfigChange[] {
+  return globalThis[CONFIG_KEY] ?? [];
+}
+
+function recordConfigChange(status: string): void {
+  const list = globalThis[CONFIG_KEY] ?? (globalThis[CONFIG_KEY] = []);
+  list.unshift({ ts: Date.now(), status });
+  if (list.length > CONFIG_CHANGE_LIMIT) list.length = CONFIG_CHANGE_LIMIT;
 }
 
 export async function initFM(): Promise<void> {
@@ -23,7 +56,24 @@ export async function initFM(): Promise<void> {
   Rox.register('recall', { ...featureFlags, ...configFlags, headerTheme });
 
   try {
-    await Rox.setup(key);
+    // configurationFetchedHandler is the only server-side notice that flag values
+    // changed. Without it the SDK just quietly starts answering differently, and
+    // there is nothing to line up against an error spike. `hasChanges` is false on
+    // the polls that found nothing new, which is most of them — only the real
+    // changes are recorded.
+    await Rox.setup(key, {
+      // The SDK pushes changes over SSE in about two seconds; this interval is only
+      // the fallback poll for when that connection is not available. rox-node
+      // defaults it to 60s. 30 matches the browser SDK in FMProvider.tsx, so a
+      // server and a browser watching the same flag do not disagree for a minute.
+      fetchIntervalInSec: 30,
+      configurationFetchedHandler: (result: { fetcherStatus?: string; hasChanges?: boolean }) => {
+        if (!result?.hasChanges) return;
+        const status = result.fetcherStatus ?? 'UNKNOWN';
+        recordConfigChange(status);
+        console.log(`[FM] Configuration changed (${status})`);
+      },
+    });
     globalThis[GLOBAL_KEY] = Rox;
     console.log('[FM] SDK initialized successfully');
   } catch (err) {
