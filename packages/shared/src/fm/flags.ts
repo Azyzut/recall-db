@@ -6,7 +6,10 @@ export const featureFlags = {
   recallAdvisor:    new Rox.Flag(false),   // AI compliance agent
   exportPdf:        new Rox.Flag(false),   // PDF export
   calendarView:     new Rox.Flag(false),   // Calendar view
-  errorState:       new Rox.Flag(false),   // Demo kill switch — force a 404 on login
+  // Named as something an audience WANTS, because the demonstration is a rollback:
+  // turn it on, the interface is unavailable, turn it off, everything returns. A
+  // flag called errorState telegraphs the ending.
+  dashboardRedesign: new Rox.Flag(false),  // Kill switch — closes the app while on
 };
 
 // ── Number configs (remote tuning) ─────────────────────────────
