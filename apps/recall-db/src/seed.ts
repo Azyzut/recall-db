@@ -14,6 +14,14 @@
 // Feature Management targeting rules can key on that property, so a single bucket
 // would leave a rule impossible to demonstrate.
 //
+// The states are spread across the country for the same reason — two east (NY, MA)
+// and one west (CA) — so a regional target group has something to select. They were
+// all west coast originally, which made a "us-east" rule match nobody.
+//
+// These are STARTING values. Running a discovery overwrites `state` with the
+// Distribution Region chosen in the form (packages/shared/src/services/company.ts),
+// so an account that has run one holds whatever was selected then.
+//
 // All data is fictional. example.com is reserved by RFC 2606 and cannot be
 // registered, so these can never collide with a real company.
 import type { Client } from 'pg';
@@ -40,7 +48,7 @@ const COMPANIES: SeedCompany[] = [
     companyName: 'Northwind Devices',
     naicsCode: '339112',            // Surgical and Medical Instrument Manufacturing
     employeeCount: 1200,
-    state: 'OR',
+    state: 'NY',
     email: 'enterprise@example.com',
     bucket: 'enterprise',
     productCategory: 'Medical Devices',
@@ -50,7 +58,7 @@ const COMPANIES: SeedCompany[] = [
     companyName: 'Harborline Foods',
     naicsCode: '311999',            // All Other Miscellaneous Food Manufacturing
     employeeCount: 250,
-    state: 'WA',
+    state: 'MA',
     email: 'midmarket@example.com',
     bucket: 'mid-market',
     productCategory: 'Food and Beverages',
