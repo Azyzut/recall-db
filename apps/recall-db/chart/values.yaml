@@ -1,0 +1,33 @@
+image:
+  repository: docker.io/CHANGEME/recall-db
+  # Builds push only a commit-SHA tag, so there is no `latest` to fall back on.
+  # deploy.yaml always sets this from the release manifest; an empty value here
+  # fails at pod creation rather than silently pulling something stale.
+  tag: ""
+  pullPolicy: Always
+
+env:
+  DATABASE_SSL: ""
+  DB_CONNECT_RETRIES: "30"
+  DB_CONNECT_DELAY_MS: "2000"
+
+secretEnv:
+  # openFDA API key. Blank means unauthenticated: 1,000 requests/day per IP.
+  FDA_API_KEY: ""
+  DATABASE_URL: ""
+  # Blank disables seeding. See apps/recall-db/src/seed.ts.
+  LOGIN_PASSWORD: ""
+
+existingSecret: ""
+
+# Give migrations room to finish, but do not hang a release indefinitely.
+backoffLimit: 3
+activeDeadlineSeconds: 600
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

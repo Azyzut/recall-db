@@ -1,0 +1,54 @@
+# Migration Job.
+#
+# Runs as a Helm pre-install/pre-upgrade hook, so migrations complete before any
+# other component starts. The runner exits non-zero on failure, which fails the
+# hook and aborts the release — services never come up against a schema that did
+# not apply.
+#
+# hook-weight -10 puts this ahead of anything else hooked at the same phase.
+# before-hook-creation deletes the previous Job first, since a completed Job
+# cannot be patched and would otherwise block the next upgrade.
+#
+# Safe to run on every deploy: the runner records applied migrations in
+# schema_migrations and skips them, so a no-op release is a no-op here.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Chart.Name }}-migrate
+  labels:
+    app: {{ .Chart.Name }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+{{- range $k, $v := .Values.env }}
+{{- if $v }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+{{- end }}
+{{- end }}
+{{- $secretName := .Values.existingSecret | default (printf "%s-secrets" .Chart.Name) }}
+{{- range $k, $v := .Values.secretEnv }}
+            - name: {{ $k }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $k }}
+                  optional: true
+{{- end }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}

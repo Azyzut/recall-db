@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recall-db
+description: "Database schema and migration Job. Runs before every other component; no standing pods."
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

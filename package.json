@@ -1,0 +1,18 @@
+{
+  "name": "recall-db",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/recall-db",
+    "packages/shared"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "start": "npm run start -w @recall/db",
+    "dev": "npm run dev -w @recall/db"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}
